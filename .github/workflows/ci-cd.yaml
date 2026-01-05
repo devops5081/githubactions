@@ -1,0 +1,45 @@
+name: Run Python Job on GKE
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  run-job:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Authenticate to GCP
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+    - name: Setup gcloud
+      uses: google-github-actions/setup-gcloud@v2
+
+    - name: Configure Docker
+      run: gcloud auth configure-docker us-central1-docker.pkg.dev
+
+    - name: Build Docker image
+      run: |
+        docker build -t us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/my-repo/python-add:$GITHUB_SHA .
+
+    - name: Push Docker image
+      run: |
+        docker push us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/my-repo/python-add:$GITHUB_SHA
+
+    - name: Get GKE credentials
+      run: |
+        gcloud container clusters get-credentials my-cluster \
+          --zone us-central1-a \
+          --project ${{ secrets.GCP_PROJECT_ID }}
+
+    - name: Run Kubernetes Job
+      run: |
+        sed -i "s|IMAGE_PLACEHOLDER|us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/my-repo/python-add:$GITHUB_SHA|g" k8s/job.yaml
+        kubectl delete job python-add-job --ignore-not-found
+        kubectl apply -f k8s/job.yaml
